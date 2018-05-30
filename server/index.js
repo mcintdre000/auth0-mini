@@ -19,7 +19,7 @@ app.use(express.static(`${__dirname}/../build`));
 
 
 app.get('/auth/callback', (req, res) => {
-  
+  console.log('hit')
   
   
   // STEP 1.)
@@ -28,11 +28,11 @@ app.get('/auth/callback', (req, res) => {
   
   let payload ={
     
-    // client_id
-    // client_secret
-    // code
-    // grant_type 
-    // redirect_uri
+    client_id: process.env.REACT_APP_AUTH0_CLIENT_ID,
+    client_secret: process.env.AUTH0_CLIENT_SECRET,
+    code: req.query.code,
+    grant_type: 'authorization_code',
+    redirect_uri: `http://${req.headers.host}/auth/callback`
     
   }
   
@@ -42,14 +42,17 @@ app.get('/auth/callback', (req, res) => {
   function tradeCodeForAccessToken(){
     
     //code here..
+    return axios.post(`https://${process.env.REACT_APP_AUTH0_DOMAIN}/oauth/token`, payload);
     
   }
   
   //STEP 3.)
   // WRITE a FUNCTION that accepts the access token as a parameter and RETURNS an axios GET to auth0 that passes the access token as a query
-  function tradeAccessTokenForUserInfo(){
+  function tradeAccessTokenForUserInfo(response){
     
     //code here ..
+    const accessToken = response.data.access_token;
+    return axios.get(`https://${process.env.REACT_APP_AUTH0_DOMAIN}/userinfo?access_token=${accessToken}`);
     
   }
   
@@ -58,18 +61,41 @@ app.get('/auth/callback', (req, res) => {
   
   // WRITE a FUNCTION that accepts the userInfo as a parameter and RETURNS a block of code.
   // Your code should set session, check your database to see if user exists and return thier info or if they dont exist, insert them into the database
-  function storeUserInfoInDataBase(){
+  function storeUserInfoInDataBase(response){
     
     //code here...
+    const userData = response.data;
+    const db = req.app.get('db');
+    return db.find_user_by_auth0_id(userData.sub).then(users => {
+      if (users.length) {
+        const userFromDb = users[0];
+        req.session.user = userFromDb;
+        res.redirect('/');
+      } else {
+        return db.create_user([
+          userData.sub,
+          userData.email,
+          userData.name,
+          userData.picture,
+        ]).then(newUser => {
+          req.session.user = newUser;
+          res.redirect('/');
+        });
+      }
+    });
+
     
   }
    
   //Final Code, Uncomment after completeing steps 1-4 above
   
-  // tradeCodeForAccessToken()
-  // .then(accessToken => tradeAccessTokenForUserInfo(accessToken))
-  // .then(userInfo => storeUserInfoInDataBase(userInfo));
-  // })
+  tradeCodeForAccessToken()
+  .then(accessToken => tradeAccessTokenForUserInfo(accessToken))
+  .then(userInfo => storeUserInfoInDataBase(userInfo))
+  .catch(error => {
+    console.log('===========server error', error);
+    res.status(500).send('Check the server for error message');
+  })
   
 });
 
